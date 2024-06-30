@@ -1,0 +1,109 @@
+x-worker-template:
+  worker_template: &worker_template
+    build:
+      context: .
+      dockerfile: ./.docker/php/Dockerfile
+      target: worker-dev
+    volumes:
+      - ./app:/app
+    profiles:
+      - worker
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: ./.docker/php/Dockerfile
+      target: dev
+    ports:
+      - "3150:3150"
+    environment:
+      SERVER_NAME: ":80"
+      MERCURE_PUBLISHER_JWT_KEY: ${CADDY_MERCURE_JWT_SECRET:-!ChangeThisMercureHubJWTSecretKey!}
+      MERCURE_SUBSCRIBER_JWT_KEY: ${CADDY_MERCURE_JWT_SECRET:-!ChangeThisMercureHubJWTSecretKey!}
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
+      TRUSTED_HOSTS: ^${SERVER_NAME:-example\.com|localhost}|php$$
+      # Run "composer require symfony/mercure-bundle" to install and configure the Mercure integration
+      MERCURE_URL: ${CADDY_MERCURE_URL:-http://php/.well-known/mercure}
+      MERCURE_PUBLIC_URL: https://${SERVER_NAME:-localhost}/.well-known/mercure
+      MERCURE_JWT_SECRET: ${CADDY_MERCURE_JWT_SECRET:-!ChangeThisMercureHubJWTSecretKey!}
+    volumes:
+#      - "/mnt/d/Users/Theo/Music/ONLY ONE:/music"
+#      - "/home/theo/Music/MUSIC_ONLY_ONE:/music"
+      - ./app:/app
+      - ./tools:/tools
+      - ./.castor:/.castor
+      - ~/.ssh:/home/www-data/.ssh:ro
+      - user_data:/home/www-data
+    labels:
+      - "traefik.enable=true"
+      - "traefik.network=traefik"
+      - "traefik.http.routers.php-music-auto-tagger.rule=Host(`music-auto-tagger.web.localhost`)"
+      - "traefik.http.routers.php-music-auto-tagger.tls=true"
+      - "traefik.http.services.php-music-auto-tagger.loadbalancer.server.port=80"
+    networks:
+      - database
+      - traefik
+      - service
+    profiles:
+      - app
+    extra_hosts:
+      - host.docker.internal:host-gateway
+
+  #scheduler:
+  #  <<: *worker_template
+  #  command: php /app/bin/console messenger:consume scheduler_default -vv
+
+  mariadb:
+    image: mariadb:10.5
+    ports:
+      - "3350:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+    volumes:
+      - mariadb:/var/lib/mysql
+    profiles:
+      - app
+    networks:
+      - database
+
+  mkdocs:
+    build:
+      dockerfile: ./.docker/mkdocs/Dockerfile
+      context: .
+    volumes:
+      - ./:/docs
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.mkdocs-music-auto-tagger.rule=Host(`music-auto-tagger.docs.localhost`)"
+      - "traefik.http.routers.mkdocs-music-auto-tagger.tls=true"
+      - "traefik.http.services.mkdocs-music-auto-tagger.loadbalancer.server.port=8000"
+    networks:
+      - traefik
+    profiles:
+      - app
+
+  g4f:
+    shm_size: 2G
+    image: hlohaus789/g4f:latest
+    volumes:
+      - g4f_cookies:/app/har_and_cookies
+    networks:
+      - service
+
+networks:
+  database:
+  service:
+  traefik:
+    external: true
+
+# Mercure is installed as a Caddy module, prevent the Flex recipe from installing another service
+###> symfony/mercure-bundle ###
+###< symfony/mercure-bundle ###
+
+volumes:
+  g4f_cookies:
+  user_data:
+  mariadb:
+###> symfony/mercure-bundle ###
+###< symfony/mercure-bundle ###
